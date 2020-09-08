@@ -558,6 +558,38 @@ class MacroSpec extends AnyWordSpec with Matchers with org.scalatestplus.scalach
       jsOptional.validate(Json.reads[Optional]) mustEqual JsSuccess(optional)
     }
 
+    "handle sealed family with nested classes" in {
+      import NestedFamily._
+
+      implicit val simpleWrites: OWrites[NestedSimple] =
+        OWrites[NestedSimple] { simple =>
+          Json.obj("bar" -> simple.bar)
+        }
+      implicit val simpleReads: Reads[NestedSimple] =
+        Reads[NestedSimple] { js =>
+          (js \ "bar").validate[String].map(NestedSimple)
+        }
+      implicit val optionalFormat: OFormat[NestedOptional] = Json.format[NestedOptional]
+      implicit val familyFormat: OFormat[NestedFamily]     = Json.format[NestedFamily]
+
+      val simple = NestedSimple("foo")
+      val jsSimple = simpleWrites.writes(simple) + (
+        "_type" -> JsString("play.api.libs.json.MacroSpec.Simple")
+      )
+
+      val optional = NestedOptional(None)
+      val jsOptional = optionalFormat.writes(optional) + (
+        "_type" -> JsString("play.api.libs.json.MacroSpec.Optional")
+      )
+
+      Json.toJson[NestedFamily](simple) mustEqual jsSimple
+      Json.toJson[NestedFamily](optional) mustEqual jsOptional
+      jsSimple.validate[NestedFamily] mustEqual JsSuccess(simple)
+      jsOptional.validate[NestedFamily] mustEqual JsSuccess(optional)
+      jsSimple.validate(Json.reads[NestedSimple]) mustEqual JsSuccess(simple)
+      jsOptional.validate(Json.reads[NestedOptional]) mustEqual JsSuccess(optional)
+    }
+
     "handle sealed family with custom discriminator name" in {
       implicit val cfg = JsonConfiguration(discriminator = "_discriminator")
       implicit val simpleWrites = OWrites[Simple] { simple =>
@@ -659,6 +691,20 @@ class MacroSpec extends AnyWordSpec with Matchers with org.scalatestplus.scalach
     /* java.lang.IllegalArgumentException:
      requirement failed: familyWrites  is not a valid identifier
    */
+  }
+
+  sealed trait NestedFamily
+  object NestedFamily {
+    case class NestedSimple(bar: String)            extends NestedFamily
+//    case class NestedLorem[T](ipsum: T, age: Int)   extends NestedFamily
+    case class NestedOptional(prop: Option[String]) extends NestedFamily
+
+    implicit val simpleWrites: OWrites[NestedSimple] =
+      Json.writes[NestedSimple]
+    implicit val optionalWrites: OWrites[NestedOptional] =
+      Json.writes[NestedOptional]
+    implicit val familyWrites: OWrites[NestedFamily] =
+      Json.writes[NestedFamily]
   }
 
   object Foo {

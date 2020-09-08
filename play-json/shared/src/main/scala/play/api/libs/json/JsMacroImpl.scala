@@ -552,47 +552,69 @@ class JsMacroImpl(val c: blackbox.Context) {
     // ---
 
     def directKnownSubclasses: Option[List[Type]] = {
-      // Workaround for SI-7046: https://issues.scala-lang.org/browse/SI-7046
-      val tpeSym = atag.tpe.typeSymbol.asClass
-
-      @annotation.tailrec
-      def allSubclasses(path: Traversable[Symbol], subclasses: Set[Type]): Set[Type] = path.headOption match {
-        case Some(cls: ClassSymbol)
-            if (
-              tpeSym != cls && cls.selfType.baseClasses.contains(tpeSym)
-            ) => {
-          val newSub: Set[Type] = if (!cls.typeParams.isEmpty) {
-            c.warning(c.enclosingPosition, s"cannot handle class ${cls.fullName}: type parameter not supported")
-            Set.empty
-          } else Set(cls.selfType)
-
-          allSubclasses(path.tail, subclasses ++ newSub)
-        }
-
-        case Some(o: ModuleSymbol)
-            if (
-              o.companion == NoSymbol && // not a companion object
-                tpeSym != c && o.typeSignature.baseClasses.contains(tpeSym)
-            ) => {
-          val newSub: Set[Type] = Set(o.typeSignature)
-
-          allSubclasses(path.tail, subclasses ++ newSub)
-        }
-
-        case Some(o: ModuleSymbol)
-            if (
-              o.companion == NoSymbol // not a companion object
-            ) =>
-          allSubclasses(path.tail, subclasses)
-
-        case Some(_) => allSubclasses(path.tail, subclasses)
-
-        case _ => subclasses
+      val parentClass = atag.tpe.typeSymbol.asClass
+      println(s"PARENT CLASS $parentClass")
+      if (parentClass.isAbstract && parentClass.isSealed) {
+        val types = parentClass.knownDirectSubclasses.toList
+          .map(_.asClass)
+          .flatMap {
+            case cls if cls.typeParams.nonEmpty =>
+              c.warning(c.enclosingPosition, s"cannot handle class ${cls.fullName}: type parameter not supported")
+              None
+            case cls =>
+              Some(cls.selfType)
+          }
+        println(s"TYPES for ${parentClass.typeSignature.typeSymbol}:")
+        types.foreach(t => println(s"- ${t.getClass.getSimpleName}; ${t.typeSymbol}; ${t.termSymbol}"))
+        Some(types)
+      } else {
+        None
       }
-
-      if (tpeSym.isSealed && tpeSym.isAbstract) {
-        Some(allSubclasses(tpeSym.owner.typeSignature.decls.sorted, Set.empty).toList)
-      } else None
+      // Workaround for SI-7046: https://issues.scala-lang.org/browse/SI-7046
+//      @annotation.tailrec
+//      def allSubclasses(path: Traversable[Symbol], subclasses: Set[Type]): Set[Type] = path.headOption match {
+//        case Some(cls: ClassSymbol)
+//            if (
+//              tpeSym != cls && cls.selfType.baseClasses.contains(tpeSym)
+//            ) => {
+//          val newSub: Set[Type] = if (!cls.typeParams.isEmpty) {
+//            c.warning(c.enclosingPosition, s"cannot handle class ${cls.fullName}: type parameter not supported")
+//            Set.empty
+//          } else Set(cls.selfType)
+//
+//          allSubclasses(path.tail, subclasses ++ newSub)
+//        }
+//
+//        case Some(o: ModuleSymbol)
+//            if (
+//              o.companion == NoSymbol && // not a companion object
+//                tpeSym != c && o.typeSignature.baseClasses.contains(tpeSym)
+//            ) => {
+//          val newSub: Set[Type] = Set(o.typeSignature)
+//
+//          allSubclasses(path.tail, subclasses ++ newSub)
+//        }
+//
+//        case Some(o: ModuleSymbol)
+//            if (
+//              o.companion == NoSymbol // not a companion object
+//            ) =>
+//          allSubclasses(path.tail, subclasses)
+//
+//        case Some(o: ModuleSymbol)
+//          if (
+//            o.companion == NoSymbol // not a companion object
+//            ) =>
+//          allSubclasses(path.tail, subclasses)
+//
+//        case Some(_) => allSubclasses(path.tail, subclasses)
+//
+//        case _ => subclasses
+//      }
+//
+//      if (tpeSym.isSealed && tpeSym.isAbstract) {
+//        Some(allSubclasses(tpeSym.owner.typeSignature.decls.sorted, Set.empty).toList)
+//      } else None
     }
 
     // --- Sub implementations
@@ -690,7 +712,9 @@ class JsMacroImpl(val c: blackbox.Context) {
         case _       => q"$json.OFormat($readLambda, $writeLambda)"
       }
 
-      c.Expr[M[A]](tree)
+      val res = c.Expr[M[A]](tree)
+      println(s"SEALED FAMILY MACRO RESULT: $res")
+      res
     }
 
     def macroCaseImpl(tpeArgs: List[Type]): c.Expr[M[A]] = {
